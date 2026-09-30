@@ -1,0 +1,220 @@
+// Placeholder menu data — replace prices/descriptions with the real lineup,
+// and swap `gradient` for a real photo once available (see PhotoTile.jsx).
+const g1 = "linear-gradient(155deg, #C08A4F, #5E3119)";
+const g2 = "linear-gradient(155deg, #8E9A6E, #4E5A3B)";
+const g3 = "linear-gradient(155deg, #D7B36A, #8A4B2B)";
+const g4 = "linear-gradient(155deg, #A9673B, #3E2110)";
+
+const MENU_ITEMS_BY_LANG = {
+  en: [
+    {
+      id: "country-boule",
+      name: "Classic Country Boule",
+      description: "Our everyday loaf. Crackling crust, open airy crumb, tangy but balanced. Made with our 10-year starter.",
+      price: "$9",
+      category: "loaves",
+      tag: "Loaves",
+      photo: "/assets/photos/boule-main-thumb.jpg",
+    },
+    {
+      id: "whole-wheat",
+      name: "Whole Wheat Sourdough",
+      description: "70% stone-milled whole wheat for a heartier crumb and a nutty, earthy flavor.",
+      price: "$10",
+      category: "loaves",
+      tag: "Loaves",
+      gradient: g2,
+    },
+    {
+      id: "rustic-rye",
+      name: "Rustic Rye Sourdough",
+      description: "Farm rye blended with bread flour for a dense, deeply flavored loaf that keeps well.",
+      price: "$10",
+      category: "loaves",
+      tag: "Loaves",
+      gradient: g3,
+    },
+    {
+      id: "seeded-multigrain",
+      name: "Seeded Multigrain Loaf",
+      description: "Sunflower, flax, oats and sesame folded into our base dough for crunch in every slice.",
+      price: "$11",
+      category: "loaves",
+      tag: "Loaves",
+      gradient: g4,
+    },
+    {
+      id: "honey-oat",
+      name: "Honey Oat Sourdough",
+      description: "Rolled oats and local honey for a soft, slightly sweet everyday sandwich loaf.",
+      price: "$10",
+      category: "loaves",
+      tag: "Loaves",
+      gradient: g1,
+    },
+    {
+      id: "sesame-rolls",
+      name: "Sesame Sourdough Rolls",
+      description: "Soft naturally leavened dinner rolls topped with toasted sesame & poppy seed. Sold as a 4-pack.",
+      price: "$8",
+      category: "rolls",
+      tag: "Rolls",
+      photo: "/assets/photos/sesame-rolls-thumb.jpg",
+    },
+    {
+      id: "cinnamon-raisin",
+      name: "Cinnamon Raisin Swirl",
+      description: "Naturally leavened and lightly sweet, swirled with cinnamon and plump raisins.",
+      price: "$11",
+      category: "sweet",
+      tag: "Sweet",
+      gradient: g3,
+    },
+    {
+      id: "focaccia",
+      name: "Rosemary & Sea Salt Focaccia",
+      description: "Farm rosemary, flaky salt, olive oil, baked in sheet pans and cut to order.",
+      price: "$12",
+      category: "savory",
+      tag: "Savory",
+      gradient: g2,
+    },
+    {
+      id: "jalapeno-cheddar",
+      name: "Jalapeño Cheddar Sourdough",
+      description: "Sharp cheddar and fresh jalapeño folded through our country dough. Baked Fridays only.",
+      price: "$12",
+      category: "savory",
+      tag: "Savory",
+      gradient: g4,
+    },
+    {
+      id: "seasonal-special",
+      name: "Seasonal Special",
+      description: "A rotating loaf built around what's ready on the farm — ask us what's baking this week.",
+      price: "Market Price",
+      category: "seasonal",
+      tag: "Seasonal",
+      gradient: g1,
+    },
+  ],
+  es: [
+    {
+      id: "country-boule",
+      name: "Boule Clásico Campestre",
+      description: "Nuestro pan de cada día. Corteza crujiente, miga aireada, ácido pero equilibrado. Hecho con nuestro fermento de 10 años.",
+      price: "$9",
+      category: "loaves",
+      tag: "Panes",
+      photo: "/assets/photos/boule-main-thumb.jpg",
+    },
+    {
+      id: "whole-wheat",
+      name: "Masa Madre de Trigo Integral",
+      description: "70% trigo integral molido en piedra para una miga más consistente y un sabor terroso a nuez.",
+      price: "$10",
+      category: "loaves",
+      tag: "Panes",
+      gradient: g2,
+    },
+    {
+      id: "rustic-rye",
+      name: "Masa Madre de Centeno Rústico",
+      description: "Centeno de la granja mezclado con harina de pan para un pan denso, de sabor profundo y buena conservación.",
+      price: "$10",
+      category: "loaves",
+      tag: "Panes",
+      gradient: g3,
+    },
+    {
+      id: "seeded-multigrain",
+      name: "Pan Multigrano con Semillas",
+      description: "Girasol, linaza, avena y sésamo incorporados a nuestra masa base para crujido en cada rebanada.",
+      price: "$11",
+      category: "loaves",
+      tag: "Panes",
+      gradient: g4,
+    },
+    {
+      id: "honey-oat",
+      name: "Masa Madre de Avena y Miel",
+      description: "Avena en hojuelas y miel local para un pan de sándwich suave y ligeramente dulce.",
+      price: "$10",
+      category: "loaves",
+      tag: "Panes",
+      gradient: g1,
+    },
+    {
+      id: "sesame-rolls",
+      name: "Panecillos de Sésamo con Masa Madre",
+      description: "Panecillos suaves de fermentación natural cubiertos con sésamo tostado y semillas de amapola. Se venden en paquete de 4.",
+      price: "$8",
+      category: "rolls",
+      tag: "Panecillos",
+      photo: "/assets/photos/sesame-rolls-thumb.jpg",
+    },
+    {
+      id: "cinnamon-raisin",
+      name: "Espiral de Canela y Pasas",
+      description: "De fermentación natural y ligeramente dulce, con espiral de canela y pasas jugosas.",
+      price: "$11",
+      category: "sweet",
+      tag: "Dulce",
+      gradient: g3,
+    },
+    {
+      id: "focaccia",
+      name: "Focaccia de Romero y Sal Marina",
+      description: "Romero de la granja, sal en escamas, aceite de oliva, horneada en bandejas y cortada al pedido.",
+      price: "$12",
+      category: "savory",
+      tag: "Salado",
+      gradient: g2,
+    },
+    {
+      id: "jalapeno-cheddar",
+      name: "Masa Madre de Jalapeño y Cheddar",
+      description: "Cheddar fuerte y jalapeño fresco incorporados a nuestra masa campestre. Se hornea solo los viernes.",
+      price: "$12",
+      category: "savory",
+      tag: "Salado",
+      gradient: g4,
+    },
+    {
+      id: "seasonal-special",
+      name: "Especial de Temporada",
+      description: "Un pan rotativo según lo que esté listo en la granja — pregúntanos qué se hornea esta semana.",
+      price: "Precio de Mercado",
+      category: "seasonal",
+      tag: "Temporada",
+      gradient: g1,
+    },
+  ],
+};
+
+const MENU_FILTERS_BY_LANG = {
+  en: [
+    { id: "all", label: "All" },
+    { id: "loaves", label: "Sourdough Loaves" },
+    { id: "rolls", label: "Rolls" },
+    { id: "sweet", label: "Enriched & Sweet" },
+    { id: "savory", label: "Savory" },
+    { id: "seasonal", label: "Seasonal" },
+  ],
+  es: [
+    { id: "all", label: "Todo" },
+    { id: "loaves", label: "Panes de Masa Madre" },
+    { id: "rolls", label: "Panecillos" },
+    { id: "sweet", label: "Enriquecidos y Dulces" },
+    { id: "savory", label: "Salados" },
+    { id: "seasonal", label: "Temporada" },
+  ],
+};
+
+export function getMenuItems(lang) {
+  return MENU_ITEMS_BY_LANG[lang] || MENU_ITEMS_BY_LANG.en;
+}
+
+export function getMenuFilters(lang) {
+  return MENU_FILTERS_BY_LANG[lang] || MENU_FILTERS_BY_LANG.en;
+}

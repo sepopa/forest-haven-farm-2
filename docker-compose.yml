@@ -1,0 +1,44 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8000"
+    environment:
+      # Must match wherever the browser actually loads the frontend from —
+      # the frontend container's published port (3001), not its internal one.
+      - CORS_ORIGINS=http://localhost:3001
+      # Change this to a long random string for any real deployment — it
+      # signs admin login sessions.
+      - ADMIN_JWT_SECRET=change-me-to-a-long-random-string
+      # Optional: a free Cloudinary account (cloudinary.com) so admin-uploaded
+      # photos/videos survive `docker compose down -v` and hosts with an
+      # ephemeral filesystem. Leave blank to keep saving to the backend_uploads
+      # volume below instead.
+      - CLOUDINARY_CLOUD_NAME=
+      - CLOUDINARY_API_KEY=
+      - CLOUDINARY_API_SECRET=
+    volumes:
+      - backend_data:/app/data
+      - backend_uploads:/app/uploads
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the built JS at image-build time — the browser (on the
+        # host) must be able to reach this, so it stays localhost, not the
+        # "backend" service name (that only resolves inside Docker's network).
+        VITE_API_BASE_URL: http://localhost:8001
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  # Keeps forest_haven.db across `docker compose down` / rebuilds. Use
+  # `docker compose down -v` if you ever want to wipe it and start fresh.
+  backend_data:
+  # Keeps admin-uploaded photos/videos across rebuilds.
+  backend_uploads:
