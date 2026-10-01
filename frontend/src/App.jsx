@@ -27,6 +27,7 @@ import OrderDetail from "./admin/pages/OrderDetail";
 import PickupDatesManager from "./admin/pages/PickupDatesManager";
 import ParametersEditor from "./admin/pages/ParametersEditor";
 import MessagesInbox from "./admin/pages/MessagesInbox";
+import AccountSettings from "./admin/pages/AccountSettings";
 
 export default function App() {
   return (
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="pickup-dates" element={<PickupDatesManager />} />
         <Route path="parameters" element={<ParametersEditor />} />
         <Route path="messages" element={<MessagesInbox />} />
+        <Route path="account" element={<AccountSettings />} />
       </Route>
     </Routes>
   );

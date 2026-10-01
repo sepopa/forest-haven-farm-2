@@ -102,6 +102,14 @@ export function resetPassword(token, newPassword) {
   return request("/api/auth/reset-password", { method: "POST", body: { token, new_password: newPassword } });
 }
 
+export function changePassword(currentPassword, newPassword) {
+  return request("/api/auth/change-password", {
+    method: "POST",
+    auth: true,
+    body: { current_password: currentPassword, new_password: newPassword },
+  });
+}
+
 // ---------- Admin content ----------
 
 export function updateContent(key, lang, data) {

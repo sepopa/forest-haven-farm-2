@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: "/admin/pickup-dates", label: "Pickup Dates" },
   { to: "/admin/parameters", label: "Parameters" },
   { to: "/admin/messages", label: "Messages" },
+  { to: "/admin/account", label: "Account & Password" },
 ];
 
 export default function AdminLayout() {

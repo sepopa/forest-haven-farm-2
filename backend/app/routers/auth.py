@@ -113,3 +113,18 @@ def reset_password(payload: schemas.ResetPasswordRequest, db: Session = Depends(
     admin.reset_token_expires = None
     db.commit()
     return {"message": "Your password has been reset. You can now log in."}
+
+
+@router.post("/change-password", response_model=schemas.MessageOut)
+def change_password(
+    payload: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Lets a signed-in admin change their password, confirming the current one first."""
+    if not verify_password(payload.current_password, admin.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+
+    admin.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Your password has been changed."}
