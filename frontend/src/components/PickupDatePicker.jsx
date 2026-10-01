@@ -6,8 +6,16 @@ const MONTH_LABELS = [
 ];
 const DOW_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
+// Local date, not toISOString() (UTC) — otherwise "today" is off by one
+// in the evening for timezones behind UTC.
 function isoToday() {
-  return new Date().toISOString().split("T")[0];
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function monthStart(iso) {
+  const [y, m] = iso.split("-").map(Number);
+  return new Date(y, m - 1, 1);
 }
 
 function fmtLabel(iso) {
@@ -23,11 +31,16 @@ function fmtLabel(iso) {
  */
 export default function PickupDatePicker({ dates, value, onChange, placeholder = "Select a pickup date…" }) {
   const [open, setOpen] = useState(false);
-  const [viewMonth, setViewMonth] = useState(() => {
-    const base = value ? new Date(value) : new Date();
-    return new Date(base.getFullYear(), base.getMonth(), 1);
-  });
+  const [viewMonth, setViewMonth] = useState(() => (value ? monthStart(value) : monthStart(isoToday())));
   const rootRef = useRef(null);
+
+  // Dates arrive async after mount. With nothing picked yet, jump to the month
+  // of the first bookable date so the calendar doesn't open on a month whose
+  // remaining slots are all full/past cutoff (e.g. late in the month).
+  const firstAvailable = dates.find((d) => d.available)?.date;
+  useEffect(() => {
+    if (!value && firstAvailable) setViewMonth(monthStart(firstAvailable));
+  }, [value, firstAvailable]);
 
   useEffect(() => {
     function onDocClick(e) {
