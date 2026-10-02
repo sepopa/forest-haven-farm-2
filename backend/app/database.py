@@ -15,7 +15,15 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./forest_haven.db")
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# pool_pre_ping: tests each pooled connection with a lightweight query before
+# reusing it, and transparently reconnects if it was dropped. Needed for
+# managed Postgres providers (e.g. Neon) that suspend/close idle connections
+# after inactivity — without this, the first request after a quiet period
+# fails with "SSL connection has been closed unexpectedly" instead of just
+# silently reconnecting.
+# pool_recycle: also proactively recycles connections older than 5 minutes,
+# as a second safety net against the same kind of silent server-side close.
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
