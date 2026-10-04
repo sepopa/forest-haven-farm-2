@@ -1,15 +1,27 @@
 """Outbound email: order notifications and admin password-reset messages.
 
-Uses plain smtplib against whatever SMTP relay is configured via env vars
-(works with Gmail/Yahoo app passwords, SendGrid, Postmark, etc. — anything
-that speaks SMTP). If SMTP_HOST isn't set (e.g. local dev with no mail
-provider on hand), the email is logged to the console instead of sent, so
-order submission and password reset never fail just because mail isn't
+Two delivery paths, picked by environment variables:
+
+1. Brevo HTTPS API (set BREVO_API_KEY) — used in production. Free hosting tiers
+   such as Render's block outbound SMTP ports (25/465/587), so mail has to go
+   over HTTPS (port 443) instead.
+2. Plain SMTP (set SMTP_HOST) — handy locally (Gmail/Yahoo app passwords,
+   Postmark, etc.).
+
+If neither is configured, the email is logged to the console instead of sent,
+so order submission and password reset never fail just because mail isn't
 configured yet.
+
+Sending happens on a background thread with a short timeout, so a slow or
+unreachable mail provider can never hold up (or break) an order request.
 """
+import json
 import logging
 import os
 import smtplib
+import threading
+import urllib.error
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -20,31 +32,100 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER or "no-reply@foresthavenfarm.example")
+FROM_NAME = os.getenv("FROM_NAME", "Forest Haven Farm")
 ORDER_NOTIFY_EMAIL = os.getenv("ORDER_NOTIFY_EMAIL", "epforest@yahoo.com")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_API_URL = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+EMAIL_TIMEOUT_SECONDS = 10
 
-def send_email(to: str, subject: str, html_body: str, text_body: str | None = None) -> None:
-    if not SMTP_HOST:
-        # No handler is guaranteed to be configured for this logger, so use
-        # warning (Python's logging "handler of last resort" prints
-        # WARNING+ to stderr) to make sure this is visible in dev.
-        logger.warning("SMTP not configured — logging email instead of sending.\nTo: %s\nSubject: %s\n%s", to, subject, text_body or html_body)
-        return
 
+def _send_via_smtp(to, subject, html_body, text_body, reply_to):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = FROM_EMAIL
     msg["To"] = to
+    if reply_to:
+        msg["Reply-To"] = reply_to
     if text_body:
         msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=EMAIL_TIMEOUT_SECONDS) as server:
         server.starttls()
         if SMTP_USER and SMTP_PASSWORD:
             server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(FROM_EMAIL, [to], msg.as_string())
+
+
+def _send_via_brevo(to, subject, html_body, text_body, reply_to):
+    payload = {
+        "sender": {"name": FROM_NAME, "email": FROM_EMAIL},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html_body,
+    }
+    if text_body:
+        payload["textContent"] = text_body
+    if reply_to:
+        payload["replyTo"] = {"email": reply_to}
+
+    request = urllib.request.Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "api-key": BREVO_API_KEY,
+            "content-type": "application/json",
+            "accept": "application/json",
+            "user-agent": "ForestHavenFarm/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=EMAIL_TIMEOUT_SECONDS) as response:
+            response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:500]
+        raise RuntimeError(f"Brevo rejected the email (HTTP {exc.code}): {detail}") from exc
+
+
+def _deliver(to, subject, html_body, text_body, reply_to):
+    if BREVO_API_KEY:
+        _send_via_brevo(to, subject, html_body, text_body, reply_to)
+    else:
+        _send_via_smtp(to, subject, html_body, text_body, reply_to)
+
+
+def _deliver_logged(to, subject, html_body, text_body, reply_to):
+    """Runs on the background thread — nobody is waiting on it, so log failures."""
+    try:
+        _deliver(to, subject, html_body, text_body, reply_to)
+    except Exception:
+        logger.exception("Email delivery failed (to=%s, subject=%r)", to, subject)
+
+
+def send_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+    reply_to: str | None = None,
+    background: bool = True,
+) -> None:
+    if not (BREVO_API_KEY or SMTP_HOST):
+        # No handler is guaranteed to be configured for this logger, so use
+        # warning (Python's logging "handler of last resort" prints
+        # WARNING+ to stderr) to make sure this is visible in dev.
+        logger.warning("Email not configured — logging email instead of sending.\nTo: %s\nSubject: %s\n%s", to, subject, text_body or html_body)
+        return
+
+    if background:
+        threading.Thread(
+            target=_deliver_logged, args=(to, subject, html_body, text_body, reply_to), daemon=True
+        ).start()
+    else:
+        _deliver(to, subject, html_body, text_body, reply_to)
 
 
 def _email_header_html() -> str:
@@ -135,9 +216,9 @@ def render_order_confirmation_html(order) -> str:
     """
 
 
-def send_order_notification(order, db=None) -> None:
-    subject = f"New order #{order.id} — {order.name} (pickup {order.pickup_date})"
-    html = render_order_bill_html(order)
+def _owner_email(db=None, context: str = "") -> str:
+    """Where owner-facing mail goes: the admin-editable "Order notification
+    email" parameter if set, otherwise the ORDER_NOTIFY_EMAIL env var."""
     recipient = ORDER_NOTIFY_EMAIL
     if db is not None:
         try:
@@ -145,18 +226,27 @@ def send_order_notification(order, db=None) -> None:
 
             recipient = content_service.get_parameters(db).get("orderNotifyEmail") or recipient
         except Exception:
-            logger.exception("Falling back to env ORDER_NOTIFY_EMAIL for order #%s", order.id)
+            logger.exception("Falling back to env ORDER_NOTIFY_EMAIL (%s)", context)
+    return recipient
+
+
+def send_order_notification(order, db=None) -> None:
+    subject = f"New order #{order.id} — {order.name} (pickup {order.pickup_date})"
+    html = render_order_bill_html(order)
+    recipient = _owner_email(db, f"order #{order.id}")
     try:
-        send_email(recipient, subject, html)
+        # Reply-To is the customer, so "Reply" in the inbox goes straight to them.
+        send_email(recipient, subject, html, reply_to=order.email)
     except Exception:
         logger.exception("Failed to send order notification email for order #%s", order.id)
 
 
-def send_order_confirmation(order) -> None:
+def send_order_confirmation(order, db=None) -> None:
     subject = f"Forest Haven Farm — order #{order.id} received"
     html = render_order_confirmation_html(order)
     try:
-        send_email(order.email, subject, html)
+        # Reply-To is the owner, since the From address may be a no-reply one.
+        send_email(order.email, subject, html, reply_to=_owner_email(db, f"order #{order.id}"))
     except Exception:
         logger.exception("Failed to send order confirmation email for order #%s", order.id)
 

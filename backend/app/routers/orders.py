@@ -65,7 +65,7 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db)):
     db.refresh(db_order)
 
     email_service.send_order_notification(db_order, db)
-    email_service.send_order_confirmation(db_order)
+    email_service.send_order_confirmation(db_order, db)
 
     return db_order
 
