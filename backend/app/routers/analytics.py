@@ -70,14 +70,17 @@ def analytics_summary(
         .all()
     )
 
+    # func.date() works on both SQLite (returns 'YYYY-MM-DD' text) and Postgres
+    # (returns a date). strftime() is SQLite-only and crashed on Postgres/Neon.
+    day_expr = func.date(models.PageView.created_at)
     daily_rows = (
         base.with_entities(
-            func.strftime("%Y-%m-%d", models.PageView.created_at).label("day"),
+            day_expr.label("day"),
             func.count(models.PageView.id).label("views"),
             func.count(func.distinct(models.PageView.visitor_id)).label("unique_visitors"),
         )
-        .group_by("day")
-        .order_by("day")
+        .group_by(day_expr)
+        .order_by(day_expr)
         .all()
     )
 
@@ -105,7 +108,7 @@ def analytics_summary(
         "device_breakdown": [{"device_type": d or "unknown", "views": v} for d, v in device_rows],
         "lang_breakdown": [{"lang": l or "unknown", "views": v} for l, v in lang_rows],
         "daily": [
-            {"date": day, "views": views, "unique_visitors": uniques}
+            {"date": str(day), "views": views, "unique_visitors": uniques}
             for day, views, uniques in daily_rows
         ],
         "top_referrers": [{"domain": domain, "views": views} for domain, views in top_referrers],

@@ -33,6 +33,54 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// ---------- Cold-start resilience ----------
+// The free hosting tier puts the backend to sleep after ~15 min without
+// traffic, and the first request afterwards can fail ("Failed to fetch") or
+// take up to a minute. Instead of giving up on the first failure we retry
+// with a short backoff, so visitors just see a brief "loading" state.
+const RETRY_STATUSES = new Set([502, 503, 504]);
+const AWAKE_WINDOW_MS = 4 * 60 * 1000;
+let awakeUntil = 0;
+let wakePromise = null;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url, options = {}, { attempts = 7, timeoutMs = 30000 } = {}) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if (!RETRY_STATUSES.has(res.status) || i === attempts - 1) {
+        if (res.status < 500) awakeUntil = Date.now() + AWAKE_WINDOW_MS;
+        return res;
+      }
+      lastError = new Error(`Server unavailable (${res.status})`);
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err; // network error, timeout, or CORS-less 5xx from a sleeping host
+    }
+    await sleep(Math.min(1500 * (i + 1), 5000));
+  }
+  throw lastError;
+}
+
+// Pings /health until the backend answers. Used before one-shot requests
+// (POSTs) so we never retry a submission that might have already gone through.
+export function wakeBackend() {
+  if (Date.now() < awakeUntil) return Promise.resolve();
+  if (!wakePromise) {
+    wakePromise = fetchWithRetry(`${API_BASE_URL}/health`, {}, { attempts: 8 })
+      .catch(() => {})
+      .finally(() => {
+        wakePromise = null;
+      });
+  }
+  return wakePromise;
+}
+
 async function request(path, { method = "GET", body, auth = false, isForm = false } = {}) {
   const headers = { ...(auth ? authHeaders() : {}) };
   let payload = body;
@@ -40,7 +88,18 @@ async function request(path, { method = "GET", body, auth = false, isForm = fals
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  const res = await fetch(`${API_BASE_URL}${path}`, { method, headers, body: payload });
+  const url = `${API_BASE_URL}${path}`;
+  let res;
+  if (method === "GET") {
+    // Safe to repeat, so retry on cold-start failures.
+    res = await fetchWithRetry(url, { method, headers });
+  } else {
+    // Not safe to repeat blindly (could duplicate an order) — wake the server
+    // first, then send exactly once.
+    await wakeBackend();
+    res = await fetch(url, { method, headers, body: payload });
+    if (res.status < 500) awakeUntil = Date.now() + AWAKE_WINDOW_MS;
+  }
   return handleResponse(res);
 }
 

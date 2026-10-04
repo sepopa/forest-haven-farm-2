@@ -18,6 +18,20 @@ function formatUSD(n) {
   return `$${n.toFixed(2)}`;
 }
 
+// Shown while the (free-tier) server wakes up after being idle.
+const DATE_MESSAGES = {
+  en: {
+    loading: "Loading dates… (can take up to a minute)",
+    failed: "Couldn't load the pickup dates.",
+    retry: "Try again",
+  },
+  es: {
+    loading: "Cargando fechas… (puede tardar hasta un minuto)",
+    failed: "No se pudieron cargar las fechas de recogida.",
+    retry: "Reintentar",
+  },
+};
+
 export default function Orders() {
   const { t, lang } = useLanguage();
   const [catalog, setCatalog] = useState([]);
@@ -26,14 +40,22 @@ export default function Orders() {
   const [draftBread, setDraftBread] = useState("");
   const [draftQty, setDraftQty] = useState(1);
   const [pickupDates, setPickupDates] = useState([]);
+  const [datesLoading, setDatesLoading] = useState(true);
+  const [datesFailed, setDatesFailed] = useState(false);
   const [policyAck, setPolicyAck] = useState(false);
   const [status, setStatus] = useState(null); // { type: 'success' | 'error', text }
   const [submitting, setSubmitting] = useState(false);
 
   const loadDates = () => {
+    setDatesLoading(true);
+    setDatesFailed(false);
     fetchPickupDates()
       .then(setPickupDates)
-      .catch(() => setPickupDates([]));
+      .catch(() => {
+        setPickupDates([]);
+        setDatesFailed(true);
+      })
+      .finally(() => setDatesLoading(false));
   };
 
   useEffect(loadDates, []);
@@ -146,7 +168,20 @@ export default function Orders() {
                   </div>
                   <div className="field">
                     <label htmlFor="order-pickup-date">{t("orders.pickupDate")}</label>
-                    <PickupDatePicker dates={pickupDates} value={form.pickup_date} onChange={changeDate} placeholder={t("orders.selectDate")} />
+                    <PickupDatePicker
+                      dates={pickupDates}
+                      value={form.pickup_date}
+                      onChange={changeDate}
+                      placeholder={datesLoading ? (DATE_MESSAGES[lang] || DATE_MESSAGES.en).loading : t("orders.selectDate")}
+                    />
+                    {datesFailed && (
+                      <p role="alert" style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>
+                        {(DATE_MESSAGES[lang] || DATE_MESSAGES.en).failed}{" "}
+                        <button type="button" className="btn btn-outline" onClick={loadDates}>
+                          {(DATE_MESSAGES[lang] || DATE_MESSAGES.en).retry}
+                        </button>
+                      </p>
+                    )}
                   </div>
                 </div>
 
