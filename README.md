@@ -26,6 +26,8 @@ InsForge gives the public (anon) key access to every table by default, so **ever
 
 ## One-time setup
 
+**Shortcut:** `bash scripts/setup-insforge.sh` runs every step below (except deploying the live site) and starts the site locally. Or do it by hand:
+
 You need Node 18+ and an InsForge account. Run everything from the repo root.
 
 ```bash
