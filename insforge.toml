@@ -1,0 +1,26 @@
+# InsForge project settings for Forest Haven Farm.
+# Apply with:  npx @insforge/cli config apply
+# Replace the example domain below with your real site address(es).
+
+[auth]
+require_email_verification = true
+verify_email_method = "link"
+reset_password_method = "link"
+# Leave sign-up open until you've created the admin account at /admin/login,
+# then set this to true and re-run `config apply`.
+disable_signup = false
+allowed_redirect_urls = [
+  "https://foresthavenfarm.insforge.site/admin/login",
+  "https://foresthavenfarm.insforge.site/admin/reset-password",
+  "http://localhost:5173/admin/login",
+  "http://localhost:5173/admin/reset-password",
+]
+
+[auth.password]
+min_length = 8
+
+[storage]
+max_file_size_mb = 15
+
+[deployments]
+subdomain = "foresthavenfarm"

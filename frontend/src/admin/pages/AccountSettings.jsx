@@ -1,35 +1,24 @@
 import { useState } from "react";
 import { useAdminAuth } from "../AuthContext";
-import { changePassword } from "../../api";
+import { forgotPassword } from "../../api";
 
+// InsForge Auth changes passwords through its emailed reset link, so this page
+// sends one to the admin's own address instead of taking the new password here.
 export default function AccountSettings() {
   const { admin } = useAdminAuth();
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [status, setStatus] = useState(null);
 
-  const save = async (e) => {
-    e.preventDefault();
+  const sendReset = async () => {
     setStatus(null);
-
-    if (newPassword !== confirmPassword) {
-      setStatus({ type: "error", text: "New passwords don't match." });
-      return;
-    }
-
-    setSaving(true);
+    setSending(true);
     try {
-      const res = await changePassword(currentPassword, newPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setStatus({ type: "success", text: res.message || "Password changed." });
+      await forgotPassword(admin.email);
+      setStatus({ type: "success", text: `Check ${admin.email} for a link to set a new password.` });
     } catch (err) {
-      setStatus({ type: "error", text: err.message || "Could not change password." });
+      setStatus({ type: "error", text: err.message || "Could not send the reset email." });
     } finally {
-      setSaving(false);
+      setSending(false);
     }
   };
 
@@ -40,50 +29,25 @@ export default function AccountSettings() {
           <h1>Account</h1>
           <p className="admin-page-desc">
             Signed in as <strong>{admin?.username}</strong>
-            {admin?.email ? ` (${admin.email})` : ""}. Change your admin password below.
+            {admin?.email ? ` (${admin.email})` : ""}.
           </p>
         </div>
       </div>
-      <form className="admin-settings-form" onSubmit={save}>
+      <div className="admin-settings-form">
         <div className="admin-field">
-          <label>Current Password</label>
-          <input
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </div>
-        <div className="admin-field">
-          <label>New Password (at least 8 characters)</label>
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-            minLength={8}
-          />
-        </div>
-        <div className="admin-field">
-          <label>Confirm New Password</label>
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            autoComplete="new-password"
-            required
-            minLength={8}
-          />
+          <label>Password</label>
+          <p className="admin-page-desc">
+            To change your password, we'll email you a secure link. Open it and choose a new password — you'll then
+            sign in with it next time.
+          </p>
         </div>
         <div className="admin-actions">
-          <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
-            {saving ? "Saving…" : "Change Password"}
+          <button type="button" className="admin-btn admin-btn-primary" onClick={sendReset} disabled={sending || !admin?.email}>
+            {sending ? "Sending…" : "Email Me a Password Reset Link"}
           </button>
           {status && <span className={`admin-status admin-status-${status.type}`}>{status.text}</span>}
         </div>
-      </form>
+      </div>
     </div>
   );
 }

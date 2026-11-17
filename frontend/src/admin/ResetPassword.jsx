@@ -6,7 +6,11 @@ import "./admin.css";
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token") || "";
+  // InsForge's reset link redirects here with ?token=…&insforge_status=ready,
+  // or ?insforge_status=error&insforge_error=… if the link was bad/expired.
+  const status = searchParams.get("insforge_status");
+  const linkError = status === "error" ? searchParams.get("insforge_error") || "This reset link is invalid or has expired." : null;
+  const token = status === "error" ? "" : searchParams.get("token") || "";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -39,7 +43,7 @@ export default function ResetPassword() {
       <div className="admin-auth-screen">
         <div className="admin-auth-card">
           <h1>Forest Haven Farm</h1>
-          <div className="admin-error">This reset link is missing its token. Request a new one.</div>
+          <div className="admin-error">{linkError || "This reset link is missing its token. Request a new one."}</div>
           <div className="admin-auth-links">
             <Link to="/admin/forgot-password" className="admin-link-btn">Request a new reset link</Link>
           </div>

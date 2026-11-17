@@ -14,6 +14,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -39,10 +40,23 @@ export default function Login() {
     }
 
     setSubmitting(true);
+    setNotice(null);
     try {
-      const { access_token } =
-        mode === "signup" ? await apiSignup(username, email, password) : await apiLogin(username, password);
-      await signIn(access_token);
+      if (mode === "signup") {
+        const result = await apiSignup(username, email, password);
+        if (result.verifyEmail) {
+          // InsForge wants the address confirmed first — the admin role is
+          // claimed on the first successful login afterwards.
+          setNotice("Account created! Check your email to confirm it, then sign in here.");
+          setPassword("");
+          setConfirmPassword("");
+          setMode("login");
+          return;
+        }
+        signIn(result.admin);
+      } else {
+        signIn(await apiLogin(email, password));
+      }
       navigate("/admin", { replace: true });
     } catch (err) {
       setError(err.message || "Something went wrong.");
@@ -66,33 +80,33 @@ export default function Login() {
         {mode === "signup" && (
           <p className="admin-auth-hint">
             {setupRequired
-              ? "This is a one-time setup — the first account created here becomes the site's only admin login."
+              ? "This is a one-time setup — the first account created here becomes the site's only admin login. You'll sign in with this email from now on."
               : "An admin account already exists — signing up again isn't possible. Please log in instead."}
           </p>
         )}
 
-        <label>
-          Username
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            required
-            minLength={3}
-          />
-        </label>
         {mode === "signup" && (
           <label>
-            Email
+            Display Name
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="nickname"
               required
+              minLength={3}
             />
           </label>
         )}
+        <label>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete={mode === "signup" ? "email" : "username"}
+            required
+          />
+        </label>
         <label>
           Password
           <input
@@ -118,6 +132,7 @@ export default function Login() {
           </label>
         )}
 
+        {notice && <div className="admin-status admin-status-success">{notice}</div>}
         {error && <div className="admin-error">{error}</div>}
 
         <button type="submit" className="admin-btn admin-btn-primary" disabled={submitting}>
@@ -136,7 +151,7 @@ export default function Login() {
           )}
           {mode === "login" && (
             <Link to="/admin/forgot-password" className="admin-link-btn">
-              Forgot your username or password?
+              Forgot your password?
             </Link>
           )}
         </div>

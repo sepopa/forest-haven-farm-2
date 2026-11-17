@@ -1,32 +1,32 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { fetchMe, getToken, setToken as persistToken } from "../api";
+import { fetchMe, logout } from "../api";
 
 const AuthContext = createContext(null);
 
+// InsForge keeps the session itself (short-lived access token in memory plus a
+// refresh cookie), so there's no token to store here — on load we just ask
+// who's signed in and whether they're the site admin.
 export function AdminAuthProvider({ children }) {
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
     fetchMe()
       .then(setAdmin)
-      .catch(() => persistToken(null))
+      .catch(() => setAdmin(null))
       .finally(() => setLoading(false));
   }, []);
 
-  const signIn = (token) => {
-    persistToken(token);
-    return fetchMe().then(setAdmin);
+  const signIn = (adminProfile) => {
+    setAdmin(adminProfile);
   };
 
-  const signOut = () => {
-    persistToken(null);
-    setAdmin(null);
+  const signOut = async () => {
+    try {
+      await logout();
+    } finally {
+      setAdmin(null);
+    }
   };
 
   return (
