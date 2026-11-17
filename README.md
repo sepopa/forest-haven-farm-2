@@ -70,6 +70,8 @@ npm run dev             # http://localhost:5173
 
 ### Deploy the site
 
+**Shortcut:** `bash scripts/deploy-site.sh` does all of this, and also updates the login redirect URLs and `SITE_URL`.
+
 ```bash
 npx @insforge/cli deployments env set VITE_INSFORGE_BASE_URL <value>
 npx @insforge/cli deployments env set VITE_INSFORGE_ANON_KEY <value>
