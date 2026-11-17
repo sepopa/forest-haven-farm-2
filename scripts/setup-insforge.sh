@@ -29,7 +29,18 @@ step "1/8  Log in to InsForge (a browser window opens)"
 $CLI whoami >/dev/null 2>&1 || $CLI login
 
 step "2/8  Link this folder to an InsForge project (pick or create one)"
-$CLI current 2>/dev/null | grep -q "App Key:" || $CLI link
+if ! $CLI current 2>/dev/null | grep -q "App Key:"; then
+  echo "   Your InsForge projects:"
+  $CLI list || true
+  echo
+  read -r -p "   Paste a project ID to use, or press Enter to create a new 'forest-haven-farm' project: " PROJECT_ID
+  if [ -n "$PROJECT_ID" ]; then
+    $CLI link --project-id "$PROJECT_ID"
+  else
+    $CLI create --name forest-haven-farm --template empty --region us-east
+  fi
+  $CLI current | grep -q "App Key:" || { echo "Project still not linked — paste the output above to Claude."; exit 1; }
+fi
 
 step "3/8  Create tables, functions and default content"
 $CLI db migrations up --all
