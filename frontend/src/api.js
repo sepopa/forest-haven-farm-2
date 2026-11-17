@@ -1,266 +1,230 @@
-// Small fetch wrapper for talking to the FastAPI backend (see /backend).
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-const TOKEN_KEY = "fhf-admin-token";
+// Data layer for the whole site, backed by InsForge (https://insforge.dev).
+//
+// This used to be a fetch wrapper around the FastAPI backend. Every function
+// keeps its old name and returns the same shape, so the pages didn't change —
+// but each one now calls the InsForge SDK directly:
+//   * business logic lives in Postgres functions (see /migrations), called
+//     with insforge.database.rpc(...)
+//   * admin login uses InsForge Auth
+//   * admin uploads go to the public "media" storage bucket
+//   * order emails are sent by the "order-emails" edge function (/functions)
+import { insforge, MEDIA_BUCKET } from "./insforge";
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
-async function handleResponse(res) {
-  if (!res.ok) {
-    let detail = `Request failed (${res.status})`;
-    try {
-      const data = await res.json();
-      detail = data.detail || detail;
-    } catch {
-      /* ignore parse errors */
-    }
-    const err = new Error(detail);
-    err.status = res.status;
+// Turns an InsForge { data, error } result into a value or a thrown Error,
+// like the old fetch wrapper did.
+async function unwrap(promise) {
+  const { data, error } = await promise;
+  if (error) {
+    const err = new Error(error.message || "Something went wrong.");
+    err.status = error.statusCode || error.status;
     throw err;
   }
-  if (res.status === 204) return null;
-  return res.json();
+  return data;
 }
 
-function authHeaders() {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-// ---------- Cold-start resilience ----------
-// The free hosting tier puts the backend to sleep after ~15 min without
-// traffic, and the first request afterwards can fail ("Failed to fetch") or
-// take up to a minute. Instead of giving up on the first failure we retry
-// with a short backoff, so visitors just see a brief "loading" state.
-const RETRY_STATUSES = new Set([502, 503, 504]);
-const AWAKE_WINDOW_MS = 4 * 60 * 1000;
-let awakeUntil = 0;
-let wakePromise = null;
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function fetchWithRetry(url, options = {}, { attempts = 7, timeoutMs = 30000 } = {}) {
-  let lastError;
-  for (let i = 0; i < attempts; i += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timer);
-      if (!RETRY_STATUSES.has(res.status) || i === attempts - 1) {
-        if (res.status < 500) awakeUntil = Date.now() + AWAKE_WINDOW_MS;
-        return res;
-      }
-      lastError = new Error(`Server unavailable (${res.status})`);
-    } catch (err) {
-      clearTimeout(timer);
-      lastError = err; // network error, timeout, or CORS-less 5xx from a sleeping host
-    }
-    await sleep(Math.min(1500 * (i + 1), 5000));
-  }
-  throw lastError;
-}
-
-// Pings /health until the backend answers. Used before one-shot requests
-// (POSTs) so we never retry a submission that might have already gone through.
-export function wakeBackend() {
-  if (Date.now() < awakeUntil) return Promise.resolve();
-  if (!wakePromise) {
-    wakePromise = fetchWithRetry(`${API_BASE_URL}/health`, {}, { attempts: 8 })
-      .catch(() => {})
-      .finally(() => {
-        wakePromise = null;
-      });
-  }
-  return wakePromise;
-}
-
-async function request(path, { method = "GET", body, auth = false, isForm = false } = {}) {
-  const headers = { ...(auth ? authHeaders() : {}) };
-  let payload = body;
-  if (body !== undefined && !isForm) {
-    headers["Content-Type"] = "application/json";
-    payload = JSON.stringify(body);
-  }
-  const url = `${API_BASE_URL}${path}`;
-  let res;
-  if (method === "GET") {
-    // Safe to repeat, so retry on cold-start failures.
-    res = await fetchWithRetry(url, { method, headers });
-  } else {
-    // Not safe to repeat blindly (could duplicate an order) — wake the server
-    // first, then send exactly once.
-    await wakeBackend();
-    res = await fetch(url, { method, headers, body: payload });
-    if (res.status < 500) awakeUntil = Date.now() + AWAKE_WINDOW_MS;
-  }
-  return handleResponse(res);
+function rpc(fn, args) {
+  return unwrap(insforge.database.rpc(fn, args));
 }
 
 // ---------- Public site ----------
 
-export function submitOrder(payload) {
-  return request("/api/orders", { method: "POST", body: payload });
+export async function submitOrder(payload) {
+  const order = await rpc("place_order", { p_order: payload });
+  // Owner notification + customer confirmation. Fire-and-forget: the order is
+  // already saved, and a scheduled sweep re-sends anything this call misses.
+  insforge.functions.invoke("order-emails", { body: { order_id: order.id } }).catch(() => {});
+  return order;
 }
 
 export function fetchPickupDates() {
-  return request("/api/pickup-dates");
+  return rpc("list_pickup_dates");
 }
 
 export function fetchBreadCatalog(lang = "en") {
-  return request(`/api/orders/catalog?lang=${encodeURIComponent(lang)}`);
+  return rpc("get_bread_catalog", { p_lang: lang });
 }
 
-export function submitContact(payload) {
-  return request("/api/contact", { method: "POST", body: payload });
+export function submitContact({ name, email, subject, message }) {
+  return rpc("submit_contact", { p_name: name, p_email: email, p_subject: subject, p_message: message });
 }
 
 export function fetchContent() {
-  return request("/api/content");
+  return rpc("get_site_content");
 }
 
-export function recordPageview(payload) {
-  return request("/api/analytics/pageview", { method: "POST", body: payload }).catch(() => {
+export function recordPageview({ path, referrer, device_type, lang, visitor_id }) {
+  return rpc("record_pageview", {
+    p_path: path,
+    p_visitor_id: visitor_id,
+    p_referrer: referrer || null,
+    p_device_type: device_type || "desktop",
+    p_lang: lang || null,
+  }).catch(() => {
     /* analytics must never break the site */
   });
 }
 
 // ---------- Admin auth ----------
 
-export function authStatus() {
-  return request("/api/auth/status");
+const NOT_ADMIN_MESSAGE = "This account isn't the site's admin login.";
+
+function siteUrl(path) {
+  return `${window.location.origin}${path}`;
 }
 
-export function signup(username, email, password) {
-  return request("/api/auth/signup", { method: "POST", body: { username, email, password } });
+export async function authStatus() {
+  const setupRequired = await rpc("admin_setup_required");
+  return { setup_required: !!setupRequired };
 }
 
-export function login(username, password) {
-  return request("/api/auth/login", { method: "POST", body: { username, password } });
+// One-time setup: creates the InsForge account and makes it the site's admin.
+// Returns { admin } when signed in straight away, or { verifyEmail: true } when
+// InsForge first needs the email address confirmed (then log in afterwards).
+export async function signup(username, email, password) {
+  const data = await unwrap(
+    insforge.auth.signUp({ email, password, name: username, redirectTo: siteUrl("/admin/login") }),
+  );
+  if (data?.requireEmailVerification || !data?.accessToken) {
+    localStorage.setItem("fhf-pending-admin-username", username);
+    return { verifyEmail: true };
+  }
+  const admin = await rpc("claim_first_admin", { p_username: username });
+  return { admin };
 }
 
-export function fetchMe() {
-  return request("/api/auth/me", { auth: true });
+export async function login(email, password) {
+  await unwrap(insforge.auth.signInWithPassword({ email, password }));
+  try {
+    // First login after confirming the setup email: finish claiming the admin role.
+    const { setup_required } = await authStatus();
+    if (setup_required) {
+      const username = localStorage.getItem("fhf-pending-admin-username") || null;
+      await rpc("claim_first_admin", { p_username: username });
+      localStorage.removeItem("fhf-pending-admin-username");
+    }
+    return await rpc("admin_me");
+  } catch (err) {
+    await insforge.auth.signOut();
+    if (err.status === 401 || /not authenticated/i.test(err.message)) throw new Error(NOT_ADMIN_MESSAGE);
+    throw err;
+  }
 }
 
-export function forgotUsername(email) {
-  return request("/api/auth/forgot-username", { method: "POST", body: { email } });
+// The signed-in admin, or null. Restores the session after a page reload.
+export async function fetchMe() {
+  const { data } = await insforge.auth.getCurrentUser();
+  if (!data?.user) return null;
+  try {
+    return await rpc("admin_me");
+  } catch {
+    return null;
+  }
 }
 
-export function forgotPassword(identifier) {
-  return request("/api/auth/forgot-password", { method: "POST", body: { identifier } });
+export async function logout() {
+  await insforge.auth.signOut();
 }
 
-export function resetPassword(token, newPassword) {
-  return request("/api/auth/reset-password", { method: "POST", body: { token, new_password: newPassword } });
+export async function forgotPassword(email) {
+  await unwrap(insforge.auth.sendResetPasswordEmail({ email, redirectTo: siteUrl("/admin/reset-password") }));
+  return { message: "If an account matches that email, we've sent a link to reset your password." };
 }
 
-export function changePassword(currentPassword, newPassword) {
-  return request("/api/auth/change-password", {
-    method: "POST",
-    auth: true,
-    body: { current_password: currentPassword, new_password: newPassword },
-  });
+export async function resetPassword(token, newPassword) {
+  await unwrap(insforge.auth.resetPassword({ newPassword, otp: token }));
+  return { message: "Your password has been reset. You can now log in." };
 }
 
 // ---------- Admin content ----------
 
 export function updateContent(key, lang, data) {
-  return request(`/api/admin/content/${key}`, { method: "PUT", auth: true, body: { lang, data } });
+  return rpc("admin_update_content", { p_key: key, p_lang: lang ?? null, p_data: data });
 }
 
-// ---------- Admin uploads ----------
+// ---------- Admin uploads (InsForge Storage, public "media" bucket) ----------
 
-export function uploadFile(file, onProgress) {
-  const token = getToken();
-  const form = new FormData();
-  form.append("file", file);
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE_URL}/api/admin/uploads`);
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    xhr.upload.onprogress = (e) => {
-      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-        else reject(new Error(data.detail || "Upload failed"));
-      } catch {
-        reject(new Error("Upload failed"));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Upload failed — is the backend running?"));
-    xhr.send(form);
-  });
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4"]);
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export async function uploadFile(file, onProgress) {
+  if (!ALLOWED_TYPES.has(file.type)) {
+    throw new Error("Unsupported file type. Use JPEG, PNG, WebP, GIF, or MP4.");
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error("File is too large (15 MB max).");
+  }
+  onProgress?.(0);
+  const data = await unwrap(insforge.storage.from(MEDIA_BUCKET).uploadAuto(file));
+  onProgress?.(100);
+  return { url: data.url, filename: data.key };
 }
 
-export function listUploads() {
-  return request("/api/admin/uploads", { auth: true });
+export async function listUploads() {
+  const data = await unwrap(insforge.storage.from(MEDIA_BUCKET).list({ limit: 1000 }));
+  const objects = Array.isArray(data) ? data : data?.objects ?? [];
+  return objects
+    .map((o) => ({ filename: o.key, url: o.url, size: o.size ?? 0, modified_at: o.uploadedAt ?? "" }))
+    .sort((a, b) => String(b.modified_at).localeCompare(String(a.modified_at)));
 }
 
-export function deleteUpload(filename) {
-  return request(`/api/admin/uploads/${encodeURIComponent(filename)}`, { method: "DELETE", auth: true });
+export async function deleteUpload(filename) {
+  await unwrap(insforge.storage.from(MEDIA_BUCKET).remove(filename));
+  return { ok: true };
 }
 
 // ---------- Admin orders / messages ----------
 
 export function listOrders() {
-  return request("/api/orders", { auth: true });
+  return rpc("admin_list_orders");
 }
 
 export function getOrder(id) {
-  return request(`/api/orders/${id}`, { auth: true });
+  return rpc("admin_get_order", { p_id: Number(id) });
 }
 
 export function updateOrderStatus(id, status) {
-  return request(`/api/orders/${id}/status`, { method: "PATCH", auth: true, body: { status } });
+  return rpc("admin_update_order_status", { p_id: Number(id), p_status: status });
 }
 
 export function listPickupDatesAdmin() {
-  return request("/api/admin/pickup-dates", { auth: true });
+  return rpc("admin_list_pickup_dates");
 }
 
 export function createPickupDate(date, maxBreads) {
-  return request("/api/admin/pickup-dates", { method: "POST", auth: true, body: { date, max_breads: maxBreads } });
+  return rpc("admin_create_pickup_date", { p_date: date, p_max_breads: maxBreads });
 }
 
-export function updatePickupDate(id, payload) {
-  return request(`/api/admin/pickup-dates/${id}`, { method: "PATCH", auth: true, body: payload });
+export function updatePickupDate(id, { max_breads, is_open } = {}) {
+  return rpc("admin_update_pickup_date", {
+    p_id: Number(id),
+    p_max_breads: max_breads ?? null,
+    p_is_open: is_open ?? null,
+  });
 }
 
-export function deletePickupDate(id) {
-  return request(`/api/admin/pickup-dates/${id}`, { method: "DELETE", auth: true });
+export async function deletePickupDate(id) {
+  await rpc("admin_delete_pickup_date", { p_id: Number(id) });
+  return null;
 }
 
 export function fetchPickupDateReport(isoDate) {
-  return request(`/api/admin/pickup-dates/${isoDate}/report`, { auth: true });
+  return rpc("admin_pickup_date_report", { p_date: isoDate });
 }
 
 export function fetchPickupRangeReport({ start, end, period }) {
-  const qs = new URLSearchParams({ start, end, period: period || "range" });
-  return request(`/api/admin/pickup-dates/report/range?${qs}`, { auth: true });
+  return rpc("admin_pickup_range_report", { p_start: start, p_end: end, p_period: period || "range" });
 }
 
 export function listContactMessages() {
-  return request("/api/contact", { auth: true });
+  return rpc("admin_list_contact_messages");
 }
 
 export function updateContactStatus(id, status) {
-  return request(`/api/contact/${id}/status`, { method: "PATCH", auth: true, body: { status } });
+  return rpc("admin_update_contact_status", { p_id: Number(id), p_status: status });
 }
 
 // ---------- Admin analytics ----------
 
 export function fetchAnalyticsSummary(days = 30) {
-  return request(`/api/admin/analytics/summary?days=${days}`, { auth: true });
+  return rpc("admin_analytics_summary", { p_days: days });
 }
-
-export { API_BASE_URL };
