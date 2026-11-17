@@ -123,6 +123,6 @@ Photos already uploaded to Cloudinary keep working, because their URLs are store
 
 - **Schema changes:** add a new file with `npx @insforge/cli db migrations new <name>`, then run `db migrations up --all`. Never edit a migration that has already been applied.
 - **Time zone:** "today", order cutoffs and daily analytics use `America/New_York` (see `fhf_today()`).
-- **Emails:** InsForge's free plan blocks custom emails, so on the free plan the order emails go through Brevo. Set the `BREVO_API_KEY` and `FROM_EMAIL` secrets (FROM_EMAIL must be a sender you verified in Brevo). Without those secrets, the function uses InsForge's own sender, which needs a paid plan. Login and password-reset emails always come from InsForge.
+- **Emails:** InsForge's free plan blocks custom emails, so on the free plan the order emails go through Brevo. Set the `BREVO_API_KEY` secret. Emails are sent from the business email in Admin → Settings, which must be a sender verified in Brevo (an optional `FROM_EMAIL` secret overrides it). Without those secrets, the function uses InsForge's own sender, which needs a paid plan. Login and password-reset emails always come from InsForge.
 - **Free plan:** InsForge may pause free projects after a period of inactivity. Check the current pricing page before relying on it for live orders.
 - `static-site/` is the original static HTML prototype and isn't used by the app.
