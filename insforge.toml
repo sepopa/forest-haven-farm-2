@@ -10,6 +10,10 @@ reset_password_method = "link"
 # then set this to true and re-run `config apply`.
 disable_signup = false
 allowed_redirect_urls = [
+  "https://www.foresthavenfarm.com/admin/login",
+  "https://www.foresthavenfarm.com/admin/reset-password",
+  "https://foresthavenfarm.com/admin/login",
+  "https://foresthavenfarm.com/admin/reset-password",
   "https://foresthavenfarm.insforge.site/admin/login",
   "https://foresthavenfarm.insforge.site/admin/reset-password",
   "http://localhost:5173/admin/login",
