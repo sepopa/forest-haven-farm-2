@@ -29,7 +29,8 @@ step "1/8  Log in to InsForge (a browser window opens)"
 $CLI whoami >/dev/null 2>&1 || $CLI login
 
 step "2/8  Link this folder to an InsForge project (pick or create one)"
-if ! $CLI current 2>/dev/null | grep -q "App Key:"; then
+echo "   Script version: 3   Folder: $(pwd)"
+if [ ! -f .insforge/project.json ]; then
   echo "   Your InsForge projects:"
   $CLI list || true
   echo
@@ -39,7 +40,7 @@ if ! $CLI current 2>/dev/null | grep -q "App Key:"; then
   else
     $CLI create --name forest-haven-farm --template empty --region us-east
   fi
-  $CLI current | grep -q "App Key:" || { echo "Project still not linked — paste the output above to Claude."; exit 1; }
+  [ -f .insforge/project.json ] || { echo "Project still not linked (no .insforge/project.json in $(pwd)) — paste the output above to Claude."; exit 1; }
 fi
 
 step "3/8  Create tables, functions and default content"
