@@ -20,6 +20,9 @@
 //                        in the email header (e.g. https://foresthavenfarm.insforge.site)
 //   ORDER_NOTIFY_EMAIL   optional — fallback owner address if the admin panel's
 //                        Parameters → "Order notification email" is empty
+//   BREVO_API_KEY        optional — send through Brevo (free tier works) instead
+//                        of InsForge's sender, which needs a paid InsForge plan
+//   FROM_EMAIL           required with Brevo — a sender address verified in Brevo
 // INSFORGE_BASE_URL and API_KEY are built-in secrets on every project.
 
 import { createClient } from "npm:@insforge/sdk";
@@ -154,6 +157,36 @@ function wrap(siteUrl: string, inner: string): string {
   </div>`;
 }
 
+type Mail = { to: string; subject: string; html: string; replyTo?: string };
+
+// Sends one email. Brevo's HTTPS API when BREVO_API_KEY is set (works on
+// InsForge's free plan); otherwise InsForge's built-in sender (paid plans).
+async function sendMail(
+  db: ReturnType<typeof createClient>,
+  mail: Mail,
+): Promise<string | null> {
+  const brevoKey = Deno.env.get("BREVO_API_KEY");
+  if (brevoKey) {
+    const fromEmail = Deno.env.get("FROM_EMAIL");
+    if (!fromEmail) return "FROM_EMAIL secret is not set (needed with BREVO_API_KEY)";
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": brevoKey, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: { name: Deno.env.get("FROM_NAME") || "Forest Haven Farm", email: fromEmail },
+        to: [{ email: mail.to }],
+        subject: mail.subject,
+        htmlContent: mail.html,
+        ...(mail.replyTo ? { replyTo: { email: mail.replyTo } } : {}),
+      }),
+    });
+    if (!res.ok) return `Brevo HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`;
+    return null;
+  }
+  const { error } = await db.emails.send({ ...mail, from: "Forest Haven Farm" });
+  return error ? error.message : null;
+}
+
 export default async function (req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Use POST." }, 405);
@@ -227,19 +260,18 @@ export default async function (req: Request): Promise<Response> {
     const errors: string[] = [];
 
     if (ownerEmail) {
-      const { error } = await db.emails.send({
+      const err = await sendMail(db, {
         to: ownerEmail,
         subject: `New order #${order.id} — ${order.name} (pickup ${order.pickup_date})`,
         html: wrap(siteUrl, `${bill}<p style="margin-top:20px;font-size:12px;color:#58493D;">Payment is due at pickup.</p>`),
         replyTo: order.email,
-        from: "Forest Haven Farm",
       });
-      if (error) errors.push(`owner: ${error.message}`);
+      if (err) errors.push(`owner: ${err}`);
     } else {
       errors.push("owner: no notification address set (admin → Parameters)");
     }
 
-    const { error: customerError } = await db.emails.send({
+    const customerError = await sendMail(db, {
       to: order.email,
       subject: `Forest Haven Farm — order #${order.id} received`,
       html: wrap(
@@ -249,9 +281,8 @@ export default async function (req: Request): Promise<Response> {
          <p style="margin-top:20px;font-size:12px;color:#58493D;">Payment is due at pickup. Thank you for supporting the farm!</p>`,
       ),
       ...(ownerEmail ? { replyTo: ownerEmail } : {}),
-      from: "Forest Haven Farm",
     });
-    if (customerError) errors.push(`customer: ${customerError.message}`);
+    if (customerError) errors.push(`customer: ${customerError}`);
 
     if (errors.length) {
       failures.push(`#${id} ${errors.join("; ")}`);
